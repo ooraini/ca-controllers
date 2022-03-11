@@ -33,10 +33,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-//+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests,verbs=get;list;watch
+//+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests,verbs=get;list;watch;update;patch;delete
 //+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests/status,verbs=update
 //+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests/approval,verbs=update
-//+kubebuilder:rbac:groups=certificates.k8s.io,resources=signers,verbs=sign;approve,resourceNames=home.arpa/ca
+//+kubebuilder:rbac:groups=certificates.k8s.io,resources=signers,verbs=sign;approve,resourceNames=ca-controllers.io/server
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
