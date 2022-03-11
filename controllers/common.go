@@ -109,7 +109,34 @@ func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *C
 }
 
 // Returning nil,nil means continue
-func (r *SecretReconciler) finalizer(ctx context.Context, req reconcile.Request) (*ctrl.Result, error) {
+
+func (r *SecretReconciler) ensureFinalizer(ctx context.Context, req reconcile.Request) (*ctrl.Result, error) {
+	log := ctrllog.FromContext(ctx)
+	secret := &corev1.Secret{}
+
+	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "unable to fetch secret")
+			return &ctrl.Result{}, err
+		} else {
+			return nil, nil
+		}
+	}
+
+	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(secret, FinalizerName) {
+			controllerutil.AddFinalizer(secret, FinalizerName)
+			if err := r.Update(ctx, secret); err != nil {
+				log.Error(err, "unable to add finalizer")
+				return &ctrl.Result{}, err
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *SecretReconciler) finalize(ctx context.Context, req reconcile.Request) (*ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 
 	secret := &corev1.Secret{}
@@ -117,42 +144,36 @@ func (r *SecretReconciler) finalizer(ctx context.Context, req reconcile.Request)
 		if !errors.IsNotFound(err) {
 			log.Error(err, "unable to fetch secret")
 			return &ctrl.Result{}, err
-		}
-	} else {
-		if secret.ObjectMeta.DeletionTimestamp.IsZero() {
-			if !controllerutil.ContainsFinalizer(secret, FinalizerName) {
-				controllerutil.AddFinalizer(secret, FinalizerName)
-				if err = r.Update(ctx, secret); err != nil {
-					log.Error(err, "unable to add finalizer")
-					return &ctrl.Result{}, err
-				}
-			}
 		} else {
-			if controllerutil.ContainsFinalizer(secret, FinalizerName) {
-				list := &certv1.CertificateSigningRequestList{}
-				err := r.List(ctx, list, client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
-				if err != nil {
-					log.Error(err, "unable to list CSRs")
-					return &ctrl.Result{}, err
-				}
-				for _, csr := range list.Items {
-					csr := csr
-					log.V(1).Info("deleting csr", "csr", csr.Name)
-					if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
-						log.Error(err, "unable to delete CSR")
-					}
-				}
+			return nil, nil
+		}
+	}
 
-				controllerutil.RemoveFinalizer(secret, FinalizerName)
-				if err = r.Update(ctx, secret); err != nil {
-					log.Error(err, "unable to remove finalizer")
-					return &ctrl.Result{}, err
+	if !secret.ObjectMeta.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(secret, FinalizerName) {
+			list := &certv1.CertificateSigningRequestList{}
+			err := r.List(ctx, list, client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
+			if err != nil {
+				log.Error(err, "unable to list CSRs")
+				return &ctrl.Result{}, err
+			}
+			for _, csr := range list.Items {
+				csr := csr
+				log.V(1).Info("deleting csr", "csr", csr.Name)
+				if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
+					log.Error(err, "unable to delete CSR")
 				}
-				log.Info("secret finalized")
 			}
 
-			return &ctrl.Result{}, nil
+			controllerutil.RemoveFinalizer(secret, FinalizerName)
+			if err = r.Update(ctx, secret); err != nil {
+				log.Error(err, "unable to remove finalizer")
+				return &ctrl.Result{}, err
+			}
+			log.Info("secret finalized")
 		}
+
+		return &ctrl.Result{}, nil
 	}
 
 	return nil, nil
