@@ -1,0 +1,15 @@
+domain: ca-controllers.io
+layout:
+- go.kubebuilder.io/v3
+projectName: ca-controllers
+repo: github.com/ooraini/ca-controllers
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: ca-controllers.io
+  group: config
+  kind: ProjectConfig
+  path: github.com/ooraini/ca-controllers/api/v2
+  version: v2
+version: "3"

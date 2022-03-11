@@ -1,0 +1,5 @@
+namespace: ca-controllers-system
+namePrefix: ca-controllers-
+resources:
+- ../rbac
+- ../manager
