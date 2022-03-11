@@ -298,8 +298,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 	if keyPem == nil {
 		for _, csr := range csrList.Items {
-			err = r.Delete(ctx, &csr)
-			if err != nil {
+			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "unable to delete csr")
 				return ctrl.Result{}, err
 			}
@@ -394,8 +393,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 		if !reflect.DeepEqual(request.DNSNames, hosts) {
 			log.V(1).Info("deleting CSR with wrong hosts", "csr", csr.Name)
-			err = r.Delete(ctx, &csr)
-			if err != nil {
+			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "unable to delete csr")
 				return ctrl.Result{}, err
 			}
@@ -410,21 +408,13 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		block, _ = pem.Decode(csr.Status.Certificate)
 		certificate, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			log.Info("deleting csr with invalid certificate")
-			err = r.Delete(ctx, &csr)
-			if err != nil {
-				log.Error(err, "unable to delete csr")
-				return ctrl.Result{}, err
-			}
-
-			continue
+			panic(err)
 		}
 
 		// expired
 		if time.Now().UTC().After(certificate.NotAfter) {
 			log.V(1).Info("deleting csr with expired certificate", "csr", csr.Name)
-			err = r.Delete(ctx, &csr)
-			if err != nil {
+			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "unable to delete csr")
 				return ctrl.Result{}, err
 			}
