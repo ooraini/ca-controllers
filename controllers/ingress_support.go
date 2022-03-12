@@ -154,16 +154,6 @@ func (r *IngressSupportReconciler) findSecretFromIngress(object client.Object) [
 func (r *IngressSupportReconciler) findSecretsInNamespace(object client.Object) []reconcile.Request {
 	namespace := object.(*corev1.Namespace)
 
-	namespaceSigner, ok := namespace.Annotations[SignerNameAnnotation]
-	if !ok || namespaceSigner != r.Config.SignerName {
-		return nil
-	}
-
-	nsSupport, ok := namespace.Annotations[IngressSupportAnnotation]
-	if ok && nsSupport == IngressSupportDisabled {
-		return nil
-	}
-
 	list := &networking1.IngressList{}
 	if err := r.Client.List(context.Background(), list, client.InNamespace(namespace.Name)); err != nil {
 		return nil
@@ -171,14 +161,11 @@ func (r *IngressSupportReconciler) findSecretsInNamespace(object client.Object) 
 
 	var requests []reconcile.Request = nil
 	for _, ingress := range list.Items {
-		optIn, ok := ingress.Annotations[IngressSupportAnnotation]
-		if nsSupport == IngressSupportAutomatic || (ok && strings.EqualFold(optIn, "true")) {
-			for _, tls := range ingress.Spec.TLS {
-				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      tls.SecretName,
-					Namespace: namespace.Name,
-				}})
-			}
+		for _, tls := range ingress.Spec.TLS {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+				Name:      tls.SecretName,
+				Namespace: namespace.Name,
+			}})
 		}
 	}
 

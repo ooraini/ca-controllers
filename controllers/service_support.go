@@ -155,18 +155,6 @@ func (r *ServiceSupportReconciler) findSecretFromService(object client.Object) [
 func (r *ServiceSupportReconciler) findSecretsInNamespace(object client.Object) []reconcile.Request {
 	namespace := object.(*corev1.Namespace)
 
-	signer, ok := namespace.Annotations[SignerNameAnnotation]
-
-	if !ok || signer != r.Config.SignerName {
-		return nil
-	}
-
-	serviceSupport, ok := namespace.Annotations[ServiceSupportAnnotation]
-
-	if ok && serviceSupport == ServiceSupportDisabled {
-		return nil
-	}
-
 	list := &corev1.ServiceList{}
 	if err := r.List(context.Background(), list, client.InNamespace(namespace.Name), client.HasLabels{SecretNameMeta}); err != nil {
 		return nil
