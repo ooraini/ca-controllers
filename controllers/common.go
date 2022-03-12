@@ -276,6 +276,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	// 2. Check if secret is managed by controller
 	secretControllerName, ok := secret.Annotations[ControllerNameAnnotation]
 	if !ok {
 		log.Info(fmt.Sprintf("secret with no %s annotation, delete the secret to reconcile", ControllerNameAnnotation))
@@ -287,6 +288,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// 3. Ensure finalizer
 	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
 		if !controllerutil.ContainsFinalizer(secret, r.FinalizerName) {
 			controllerutil.AddFinalizer(secret, r.FinalizerName)
@@ -297,24 +299,15 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	// 4. Ensure tls.key
 	keyPem := secret.Data["tls.key"]
-	csrList := &certv1.CertificateSigningRequestList{}
-	err = r.List(ctx, csrList,
-		client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
-
-	if err != nil {
-		log.Error(err, "unable to list CSRs")
-		return ctrl.Result{}, err
-	}
 
 	if keyPem == nil {
-		for _, csr := range csrList.Items {
-			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
-				log.Error(err, "unable to delete csr")
-				return ctrl.Result{}, err
-			}
+		log.Info("secret with no tls.key, deleting")
+		if err = r.Delete(ctx, secret); err != nil {
+			log.Error(err, "unable to delete secret")
+			return ctrl.Result{}, err
 		}
-		log.Info("secret with existing csr but no key, deleting all CSRs")
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, nil
 	}
 
@@ -325,6 +318,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// 5. Ensure owner
 	ownerSet := false
 	for _, ownerRef := range secret.GetOwnerReferences() {
 		if ownerRef.UID == owner.GetUID() {
@@ -334,19 +328,29 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 	if ownerSet == false {
 		_ = controllerutil.SetOwnerReference(owner, secret, r.Scheme)
-		err := r.Update(ctx, secret)
-		if err != nil {
+		if err = r.Update(ctx, secret); err != nil {
 			log.Error(err, "unable to update owner reference")
 			return ctrl.Result{}, err
 		}
+	}
+
+	// 6. Fetch all CSRs for secret
+	csrList := &certv1.CertificateSigningRequestList{}
+	err = r.List(ctx, csrList,
+		client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
+
+	if err != nil {
+		log.Error(err, "unable to list CSRs")
+		return ctrl.Result{}, err
 	}
 
 	var bestCSR *certv1.CertificateSigningRequest
 	var bestCertificate *x509.Certificate
 	pendingCSRs := 0
 
-	// Delete expired CSRs and CSRs with mis-matched DNS names
+	// 6. Delete expired CSRs and CSRs with mis-matched DNS names
 	for _, csr := range csrList.Items {
+		log = log.WithValues("csr", csr.Name)
 		csr := csr
 		block, _ = pem.Decode(csr.Spec.Request)
 		request, err := x509.ParseCertificateRequest(block.Bytes)
@@ -355,7 +359,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 
 		if !reflect.DeepEqual(request.DNSNames, hosts) {
-			log.V(1).Info("deleting CSR with wrong hosts", "csr", csr.Name)
+			log.V(1).Info("deleting CSR with wrong hosts")
 			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "unable to delete csr")
 				return ctrl.Result{}, err
@@ -376,7 +380,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 		// expired
 		if time.Now().UTC().After(certificate.NotAfter) {
-			log.V(1).Info("deleting csr with expired certificate", "csr", csr.Name)
+			log.V(1).Info("deleting csr with expired certificate")
 			if err = r.Delete(ctx, &csr); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "unable to delete csr")
 				return ctrl.Result{}, err
@@ -395,22 +399,25 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	// 7. Four cases
+
+	// 7.a No signed CSR, but some pending ones
 	if bestCSR == nil && pendingCSRs > 0 {
 		log.V(1).Info("pending csr, waiting")
 		return ctrl.Result{}, nil
 	}
 
+	// 7.b no CSRs at all => Create a new one
 	if bestCSR == nil && pendingCSRs == 0 {
-		log.Info("no pending CSRs, creating a new one")
+		log.Info("no csr, creating")
 		csr, err := createCsr(secret.Name, secret.Namespace, r.Config.SignerName, hosts, privateKey)
 		if err != nil {
-			log.Error(err, "unable to create csr")
+			log.Error(err, "unable to create x509 csr", "csr", csr.Name)
 			return ctrl.Result{}, err
 		}
 
-		err = r.Create(ctx, csr)
-		if err != nil {
-			log.Info("unable to create csr")
+		if err = r.Create(ctx, csr); err != nil {
+			log.Info("unable to create csr", "csr", csr.Name)
 			return ctrl.Result{}, err
 		}
 
@@ -418,6 +425,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure bestCSR certificate is used in secret
 	if !reflect.DeepEqual(bestCSR.Status.Certificate, secret.Data["tls.crt"]) {
 		log.Info("replacing certificate in secret", "csr", bestCSR.Name)
 		if bestCSR.Status.Certificate == nil {
@@ -430,11 +438,12 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	// 7.c One singed CSR and some pending ones
 	if pendingCSRs > 0 {
 		return ctrl.Result{}, nil
 	}
 
-	// Renew
+	// 7.d One singed CSR but no pending ones
 	certDuration := bestCertificate.NotAfter.Sub(bestCertificate.NotBefore)
 	renewTime := bestCertificate.NotAfter.Add(-(certDuration / 10))
 
