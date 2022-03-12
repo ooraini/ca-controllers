@@ -68,7 +68,6 @@ const (
 	ControllerNameAnnotation     = "ca-controllers.io/controller"
 	ServiceSupportControllerName = "servicesupport"
 	IngressSupportControllerName = "ingresssupport"
-	FinalizerName                = "ca-controllers.io/finalizer"
 
 	ServiceSupportAnnotation string = "ca-controllers.io/servicesupport"
 	ServiceSupportEnabled    string = "Enabled"
@@ -102,10 +101,17 @@ type SecretReconciler struct {
 	Scheme         *runtime.Scheme
 	Config         *Config
 	ControllerName string
+	FinalizerName  string
 }
 
 func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *Config, controllerName string) *SecretReconciler {
-	return &SecretReconciler{Client: client, Scheme: scheme, Config: config, ControllerName: controllerName}
+	return &SecretReconciler{
+		Client:         client,
+		Scheme:         scheme,
+		Config:         config,
+		ControllerName: controllerName,
+		FinalizerName:  "ca-controllers.io/" + controllerName,
+	}
 }
 
 // Returning nil,nil means continue
@@ -124,7 +130,7 @@ func (r *SecretReconciler) finalize(ctx context.Context, req reconcile.Request) 
 	}
 
 	if !secret.ObjectMeta.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(secret, FinalizerName) {
+		if controllerutil.ContainsFinalizer(secret, r.FinalizerName) {
 			list := &certv1.CertificateSigningRequestList{}
 			err := r.List(ctx, list, client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
 			if err != nil {
@@ -139,7 +145,7 @@ func (r *SecretReconciler) finalize(ctx context.Context, req reconcile.Request) 
 				}
 			}
 
-			controllerutil.RemoveFinalizer(secret, FinalizerName)
+			controllerutil.RemoveFinalizer(secret, r.FinalizerName)
 			if err = r.Update(ctx, secret); err != nil {
 				log.Error(err, "unable to remove finalizer")
 				return &ctrl.Result{}, err
@@ -282,8 +288,8 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 	}
 
 	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(secret, FinalizerName) {
-			controllerutil.AddFinalizer(secret, FinalizerName)
+		if !controllerutil.ContainsFinalizer(secret, r.FinalizerName) {
+			controllerutil.AddFinalizer(secret, r.FinalizerName)
 			if err := r.Update(ctx, secret); err != nil {
 				log.Error(err, "unable to add finalizer")
 				return ctrl.Result{}, err
