@@ -60,13 +60,7 @@ func (r *ServiceSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// 4. Ensure finalizer
-	result, err = r.SecretReconciler.ensureFinalizer(ctx, req)
-	if result != nil || err != nil {
-		return *result, err
-	}
-
-	// 5. Check number of resources
+	// 4. Check number of resources
 	serviceList := &corev1.ServiceList{}
 	err = r.List(ctx, serviceList, client.InNamespace(req.Namespace), client.MatchingLabels{
 		SecretNameMeta: req.Name,
@@ -77,13 +71,13 @@ func (r *ServiceSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// 5.a No services
+	// 4.a No services
 	if len(serviceList.Items) == 0 {
 		log.V(1).Info("no service with reference to secret")
 		return reconcile.Result{}, nil
 	}
 
-	// 5.b More than one service
+	// 4.b More than one service
 	if len(serviceList.Items) > 1 {
 		var names []string = nil
 		for _, service := range serviceList.Items {

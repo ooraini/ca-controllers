@@ -110,32 +110,6 @@ func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *C
 
 // Returning nil,nil means continue
 
-func (r *SecretReconciler) ensureFinalizer(ctx context.Context, req reconcile.Request) (*ctrl.Result, error) {
-	log := ctrllog.FromContext(ctx)
-	secret := &corev1.Secret{}
-
-	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "unable to fetch secret")
-			return &ctrl.Result{}, err
-		} else {
-			return nil, nil
-		}
-	}
-
-	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(secret, FinalizerName) {
-			controllerutil.AddFinalizer(secret, FinalizerName)
-			if err := r.Update(ctx, secret); err != nil {
-				log.Error(err, "unable to add finalizer")
-				return &ctrl.Result{}, err
-			}
-		}
-	}
-
-	return nil, nil
-}
-
 func (r *SecretReconciler) finalize(ctx context.Context, req reconcile.Request) (*ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 
@@ -305,6 +279,16 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 	if ok && secretControllerName != r.ControllerName {
 		log.Info("secret is managed by a different controller, make sure that a secret is not referred to by more than one resource")
 		return ctrl.Result{}, nil
+	}
+
+	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(secret, FinalizerName) {
+			controllerutil.AddFinalizer(secret, FinalizerName)
+			if err := r.Update(ctx, secret); err != nil {
+				log.Error(err, "unable to add finalizer")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	keyPem := secret.Data["tls.key"]

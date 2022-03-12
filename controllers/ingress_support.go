@@ -65,13 +65,7 @@ func (r *IngressSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// 4. Ensure finalizer
-	result, err = r.SecretReconciler.ensureFinalizer(ctx, req)
-	if result != nil || err != nil {
-		return *result, err
-	}
-
-	// 5/ Check number of resources
+	// 4. Check number of resources
 	list := &networking1.IngressList{}
 	if err = r.Client.List(ctx, list, client.InNamespace(req.Namespace)); err != nil {
 		log.Error(err, "unable to list ingresses")
