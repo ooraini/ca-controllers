@@ -443,7 +443,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// 7.d One singed CSR but no pending ones, processed to renewal
+	// 7.d One singed CSR but no pending ones, proceed to renewal
 
 	// 8. Renewal
 	certDuration := bestCertificate.NotAfter.Sub(bestCertificate.NotBefore)
