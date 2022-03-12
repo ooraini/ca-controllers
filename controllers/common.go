@@ -351,54 +351,6 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	labels := map[string]string{
-		SecretNamespaceMeta: secret.Namespace,
-		SecretNameMeta:      secret.Name,
-	}
-
-	createCsr := func() (*certv1.CertificateSigningRequest, error) {
-		template := &x509.CertificateRequest{
-			SignatureAlgorithm: 0,
-			Subject: pkix.Name{
-				CommonName: hosts[0],
-			},
-			DNSNames: hosts,
-		}
-
-		csrDer, err := x509.CreateCertificateRequest(rand.Reader, template, privateKey)
-
-		if err != nil {
-			log.Info("unable to create x509 csr")
-			return nil, err
-		}
-
-		csrPem := pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE REQUEST",
-			Bytes: csrDer,
-		})
-
-		sum := sha1.Sum(csrDer)
-		suffix := hex.EncodeToString(sum[:])[:8]
-
-		return &certv1.CertificateSigningRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        fmt.Sprintf("%s-%s-%s", secret.Namespace, secret.Name, suffix),
-				Labels:      labels,
-				Annotations: nil,
-			},
-			Spec: certv1.CertificateSigningRequestSpec{
-				Request:           csrPem,
-				SignerName:        r.Config.SignerName,
-				ExpirationSeconds: nil,
-				Usages: []certv1.KeyUsage{
-					certv1.UsageDigitalSignature,
-					certv1.UsageKeyEncipherment,
-					certv1.UsageServerAuth,
-				},
-			},
-		}, nil
-	}
-
 	var bestCSR *certv1.CertificateSigningRequest
 	var bestCertificate *x509.Certificate
 	pendingCSRs := 0
@@ -460,7 +412,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 	if bestCSR == nil && pendingCSRs == 0 {
 		log.Info("no pending CSRs, creating a new one")
-		csr, err := createCsr()
+		csr, err := createCsr(secret.Name, secret.Namespace, r.Config.SignerName, hosts, privateKey)
 		if err != nil {
 			log.Error(err, "unable to create csr")
 			return ctrl.Result{}, err
@@ -498,7 +450,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 
 	now := time.Now().UTC()
 	if now.After(renewTime) {
-		csr, err := createCsr()
+		csr, err := createCsr(secret.Name, secret.Namespace, r.Config.SignerName, hosts, privateKey)
 		if err != nil {
 			log.Error(err, "unable to create csr")
 			return ctrl.Result{}, err
@@ -607,4 +559,49 @@ func createCertificate(csr *x509.CertificateRequest, duration time.Duration, par
 	return append(
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate}),
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: parent.Raw})...), nil
+}
+
+func createCsr(name, namespace, signerName string, hosts []string, privateKey crypto.PrivateKey) (*certv1.CertificateSigningRequest, error) {
+	template := &x509.CertificateRequest{
+		SignatureAlgorithm: 0,
+		Subject: pkix.Name{
+			CommonName: hosts[0],
+		},
+		DNSNames: hosts,
+	}
+
+	csrDer, err := x509.CreateCertificateRequest(rand.Reader, template, privateKey)
+
+	if err != nil {
+		return nil, err
+	}
+
+	csrPem := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE REQUEST",
+		Bytes: csrDer,
+	})
+
+	sum := sha1.Sum(csrDer)
+	suffix := hex.EncodeToString(sum[:])[:8]
+
+	return &certv1.CertificateSigningRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-%s-%s", namespace, name, suffix),
+			Labels: map[string]string{
+				SecretNamespaceMeta: namespace,
+				SecretNameMeta:      name,
+			},
+			Annotations: nil,
+		},
+		Spec: certv1.CertificateSigningRequestSpec{
+			Request:           csrPem,
+			SignerName:        signerName,
+			ExpirationSeconds: nil,
+			Usages: []certv1.KeyUsage{
+				certv1.UsageDigitalSignature,
+				certv1.UsageKeyEncipherment,
+				certv1.UsageServerAuth,
+			},
+		},
+	}, nil
 }
