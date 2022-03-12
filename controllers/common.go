@@ -443,8 +443,14 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// 7.d One singed CSR but no pending ones
+	// 7.d One singed CSR but no pending ones, processed to renewal
+
+	// 8. Renewal
 	certDuration := bestCertificate.NotAfter.Sub(bestCertificate.NotBefore)
+	if r.Config.CertificateDuration < certDuration {
+		certDuration = r.Config.CertificateDuration
+	}
+
 	renewTime := bestCertificate.NotAfter.Add(-(certDuration / 10))
 
 	now := time.Now().UTC()
@@ -455,7 +461,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
-		log.Info("renewing certificate by creating a new csr", "csr", csr.Name)
+		log.V(1).Info("renewing certificate by creating a new csr", "csr", csr.Name)
 
 		err = r.Create(ctx, csr)
 		if err != nil {
@@ -463,7 +469,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
-		log.Info("csr created", "csr", csr.Name)
+		log.Info("csr created for renewal", "csr", csr.Name)
 		return ctrl.Result{}, nil
 	}
 
