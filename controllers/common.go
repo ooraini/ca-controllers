@@ -352,6 +352,11 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 	for _, csr := range csrList.Items {
 		log = log.WithValues("csr", csr.Name)
 		csr := csr
+
+		if csr.Spec.SignerName != r.Config.SignerName {
+			continue
+		}
+
 		block, _ = pem.Decode(csr.Spec.Request)
 		request, err := x509.ParseCertificateRequest(block.Bytes)
 		if err != nil {
