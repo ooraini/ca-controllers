@@ -61,8 +61,6 @@ const (
 	DefaultClusterDomain         = "cluster.local"
 	SecretNameMeta               = "ca-controllers.io/secret.metadata.name"
 	SecretNamespaceMeta          = "ca-controllers.io/secret.metadata.namespace"
-	ServiceNameMeta              = "ca-controllers.io/service.metadata.name"
-	ServiceNamespaceMeta         = "ca-controllers.io/service.metadata.namespace"
 	SignerNameAnnotation         = "ca-controllers.io/signerName"
 	IncludeRootCAAnnotation      = "ca-controllers.io/include-root-ca"
 	ControllerNameAnnotation     = "ca-controllers.io/controller"
@@ -70,18 +68,10 @@ const (
 	IngressSupportControllerName = "ingresssupport"
 
 	ServiceSupportAnnotation string = "ca-controllers.io/servicesupport"
-	ServiceSupportEnabled    string = "Enabled"
-	ServiceSupportDisabled   string = "Disabled"
-	// IngressSupportAnnotation is applied to either a namespace or an ingress.
-	// On a namespace, the allowed values are:
-	// IngressSupportWhenAnnotated
-	// IngressSupportAutomatic
-	// IngressSupportDisabled
-	// On an ingress, the allowed values are "True" or "False".
-	IngressSupportAnnotation    string = "ca-controllers.io/ingresssupport"
-	IngressSupportWhenAnnotated string = "WhenAnnotated"
-	IngressSupportAutomatic     string = "Automatic"
-	IngressSupportDisabled      string = "Disabled"
+	IngressSupportAnnotation string = "ca-controllers.io/ingresssupport"
+	ObjectWhenAnnotated      string = "WhenAnnotated"
+	ObjectSupportEnabled     string = "Enabled"
+	ObjectSupportDisabled    string = "Disabled"
 )
 
 var (

@@ -53,10 +53,15 @@ func (r *ServiceSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return *result, err
 	}
 
-	// 3. Check support
-	namespaceServiceSupport, ok := namespace.Annotations[ServiceSupportAnnotation]
-	if ok && namespaceServiceSupport != ServiceSupportDisabled {
-		log.V(1).Info("servicesupport disabled at namespace")
+	// 3. Check namespace support
+	nsSupport, ok := namespace.Annotations[ServiceSupportAnnotation]
+	// treat un-annotated and unknown values as ObjectWhenAnnotated
+	if !ok || (!strings.EqualFold(nsSupport, ObjectSupportEnabled) && !strings.EqualFold(nsSupport, ObjectSupportDisabled)) {
+		nsSupport = ObjectWhenAnnotated
+	}
+
+	if strings.EqualFold(nsSupport, ObjectSupportDisabled) {
+		log.V(1).Info("disabled at namespace, ignoring")
 		return ctrl.Result{}, nil
 	}
 

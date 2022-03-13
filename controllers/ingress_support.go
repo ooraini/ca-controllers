@@ -53,14 +53,14 @@ func (r *IngressSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return *result, err
 	}
 
-	// 3. Check support
-	support, ok := namespace.Annotations[IngressSupportAnnotation]
-	// treat un-annotated and unknown values as IngressSupportWhenAnnotated
-	if !ok || (support != IngressSupportAutomatic && support != IngressSupportDisabled) {
-		support = IngressSupportWhenAnnotated
+	// 3. Check namespace support
+	nsSupport, ok := namespace.Annotations[IngressSupportAnnotation]
+	// treat un-annotated and unknown values as ObjectWhenAnnotated
+	if !ok || (!strings.EqualFold(nsSupport, ObjectSupportEnabled) && !strings.EqualFold(nsSupport, ObjectSupportDisabled)) {
+		nsSupport = ObjectWhenAnnotated
 	}
 
-	if support == IngressSupportDisabled {
+	if strings.EqualFold(nsSupport, ObjectSupportDisabled) {
 		log.V(1).Info("disabled at namespace, ignoring")
 		return ctrl.Result{}, nil
 	}
@@ -74,8 +74,8 @@ func (r *IngressSupportReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	ingresses := make([]networking1.Ingress, 0)
 	for _, ingress := range list.Items {
-		optIn, ok := ingress.Annotations[IngressSupportAnnotation]
-		if support == IngressSupportAutomatic || (ok && strings.EqualFold(optIn, "true")) {
+		resourceSupport, ok := ingress.Annotations[IngressSupportAnnotation]
+		if strings.EqualFold(nsSupport, ObjectSupportEnabled) || (ok && strings.EqualFold(resourceSupport, ObjectSupportEnabled)) {
 			for _, tls := range ingress.Spec.TLS {
 				if tls.SecretName == req.Name {
 					ingresses = append(ingresses, ingress)
