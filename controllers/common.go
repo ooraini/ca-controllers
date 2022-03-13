@@ -109,8 +109,8 @@ func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *C
 		Client:         client,
 		Scheme:         scheme,
 		Config:         config,
-		ControllerName: fmt.Sprintf("%s/%s", controllerName, config.SignerName),
-		FinalizerName:  fmt.Sprintf("%s/%s", controllerName, config.SignerName),
+		ControllerName: fmt.Sprintf("%s.%s", controllerName, config.SignerName),
+		FinalizerName:  fmt.Sprintf("%s.%s", controllerName, config.SignerName),
 	}
 }
 
