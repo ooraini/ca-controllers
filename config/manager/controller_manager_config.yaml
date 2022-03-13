@@ -9,7 +9,6 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: bc30276d.ca-controllers.io
-  resourceNamespace: ca-controllers-system
 
 signerName: ca-controllers.io/server
 caCertPath: /ca/tls.crt
