@@ -31,7 +31,7 @@ func NewIngressSupportReconciler(client client.Client, scheme *runtime.Scheme, c
 		Client:           client,
 		Scheme:           scheme,
 		Config:           config,
-		SecretReconciler: NewSecretReconciler(client, scheme, config, IngressSupportControllerName),
+		SecretReconciler: NewSecretReconciler(client, scheme, config, "ca-controllers.io/ingress", "networking.k8s.io", "v1", "Ingress"),
 	}, nil
 }
 
@@ -130,7 +130,7 @@ func (r *IngressSupportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.findSecretFromCsr),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
-		Named("ingresssupport").
+		Named("ingress").
 		Complete(r)
 }
 

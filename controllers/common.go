@@ -57,21 +57,20 @@ type Config struct {
 }
 
 const (
-	DefaultKeyType               = "EC"
-	DefaultClusterDomain         = "cluster.local"
-	SecretNameMeta               = "ca-controllers.io/secret.metadata.name"
-	SecretNamespaceMeta          = "ca-controllers.io/secret.metadata.namespace"
-	SignerNameAnnotation         = "ca-controllers.io/signerName"
-	IncludeRootCAAnnotation      = "ca-controllers.io/include-root-ca"
-	ControllerNameAnnotation     = "ca-controllers.io/controller"
-	ServiceSupportControllerName = "servicesupport"
-	IngressSupportControllerName = "ingresssupport"
-
-	ServiceSupportAnnotation string = "ca-controllers.io/servicesupport"
-	IngressSupportAnnotation string = "ca-controllers.io/ingresssupport"
-	ObjectWhenAnnotated      string = "WhenAnnotated"
-	ObjectSupportEnabled     string = "Enabled"
-	ObjectSupportDisabled    string = "Disabled"
+	DefaultKeyType              = "EC"
+	DefaultClusterDomain        = "cluster.local"
+	SecretNameMeta              = "ca-controllers.io/secret.metadata.name"
+	SecretNamespaceMeta         = "ca-controllers.io/secret.metadata.namespace"
+	SignerNameAnnotation        = "ca-controllers.io/signerName"
+	IncludeRootCAAnnotation     = "ca-controllers.io/include-root-ca"
+	ControllerGroupAnnotation   = "ca-controllers.io/group"
+	ControllerVersionAnnotation = "ca-controllers.io/version"
+	ControllerKindAnnotation    = "ca-controllers.io/kind"
+	ServiceSupportAnnotation    = "ca-controllers.io/service"
+	IngressSupportAnnotation    = "ca-controllers.io/ingress"
+	ObjectWhenAnnotated         = "WhenAnnotated"
+	ObjectSupportEnabled        = "Enabled"
+	ObjectSupportDisabled       = "Disabled"
 )
 
 var (
@@ -88,19 +87,23 @@ var (
 
 type SecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Config         *Config
-	ControllerName string
-	FinalizerName  string
+	Scheme        *runtime.Scheme
+	Config        *Config
+	FinalizerName string
+	Group         string
+	Version       string
+	Kind          string
 }
 
-func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *Config, controllerName string) *SecretReconciler {
+func NewSecretReconciler(client client.Client, scheme *runtime.Scheme, config *Config, finalizerName, group, version, kind string) *SecretReconciler {
 	return &SecretReconciler{
-		Client:         client,
-		Scheme:         scheme,
-		Config:         config,
-		ControllerName: fmt.Sprintf("%s.%s", controllerName, config.SignerName),
-		FinalizerName:  fmt.Sprintf("%s.%s", controllerName, config.SignerName),
+		Client:        client,
+		Scheme:        scheme,
+		Config:        config,
+		FinalizerName: finalizerName,
+		Group:         group,
+		Version:       version,
+		Kind:          kind,
 	}
 }
 
@@ -237,7 +240,9 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 					Namespace: req.Namespace,
 					Labels:    nil,
 					Annotations: map[string]string{
-						ControllerNameAnnotation: r.ControllerName,
+						ControllerGroupAnnotation:   r.Group,
+						ControllerVersionAnnotation: r.Version,
+						ControllerKindAnnotation:    r.Kind,
 					},
 				},
 				Data: map[string][]byte{
@@ -267,13 +272,10 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 	}
 
 	// 2. Check if secret is managed by controller
-	secretControllerName, ok := secret.Annotations[ControllerNameAnnotation]
-	if !ok {
-		log.Info(fmt.Sprintf("secret with no %s annotation, delete the secret to reconcile", ControllerNameAnnotation))
-		return ctrl.Result{}, nil
-	}
-
-	if ok && secretControllerName != r.ControllerName {
+	group := secret.Annotations[ControllerGroupAnnotation]
+	version := secret.Annotations[ControllerVersionAnnotation]
+	kind := secret.Annotations[ControllerKindAnnotation]
+	if group != r.Group || version != r.Version || kind != r.Kind {
 		log.Info("secret is managed by a different controller, make sure that a secret is not referred to by more than one resource")
 		return ctrl.Result{}, nil
 	}

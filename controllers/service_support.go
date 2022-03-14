@@ -31,7 +31,7 @@ func NewServiceSupportReconciler(client client.Client, scheme *runtime.Scheme, c
 		Client:           client,
 		Scheme:           scheme,
 		Config:           config,
-		SecretReconciler: NewSecretReconciler(client, scheme, config, ServiceSupportControllerName),
+		SecretReconciler: NewSecretReconciler(client, scheme, config, "ca-controllers.io/service", "", "v1", "Service"),
 	}, nil
 }
 
@@ -134,7 +134,7 @@ func (r *ServiceSupportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.findSecretFromCsr),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
-		Named("servicesupport").
+		Named("service").
 		Complete(r)
 }
 
