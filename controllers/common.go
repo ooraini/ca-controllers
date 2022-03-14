@@ -248,14 +248,13 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 				Data: map[string][]byte{
 					"tls.key": toPem(key),
 					"tls.crt": nil,
-					"ca.crt":  nil,
 				},
 				Type: "kubernetes.io/tls",
 			}
 
 			_ = controllerutil.SetOwnerReference(owner, secret, r.Scheme)
 
-			if includeRoot {
+			if includeRoot && r.Config.RootCAPem != nil {
 				secret.Data["ca.crt"] = r.Config.RootCAPem
 			}
 
@@ -326,7 +325,16 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// 6. Fetch all CSRs for secret
+	// 6. Ensure ca.crt
+	if includeRoot && secret.Data["ca.crt"] == nil && r.Config.RootCAPem != nil {
+		secret.Data["ca.crt"] = r.Config.RootCAPem
+		if err = r.Update(ctx, secret); err != nil {
+			log.Error(err, "unable to update Data[cr.crt]")
+			return ctrl.Result{}, err
+		}
+	}
+
+	// 7. Fetch all CSRs for secret
 	csrList := &certv1.CertificateSigningRequestList{}
 	err = r.List(ctx, csrList,
 		client.MatchingLabels{SecretNamespaceMeta: secret.Namespace, SecretNameMeta: secret.Name})
@@ -340,7 +348,7 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 	var bestCertificate *x509.Certificate
 	pendingCSRs := 0
 
-	// 6. Delete expired CSRs and CSRs with mis-matched DNS names
+	// 8. Delete expired CSRs and CSRs with mis-matched DNS names
 	for _, csr := range csrList.Items {
 		log = log.WithValues("csr", csr.Name)
 		csr := csr
@@ -396,15 +404,15 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// 7. Four cases
+	// 9. Four cases
 
-	// 7.a No signed CSR, but some pending ones
+	// 9.a No signed CSR, but some pending ones
 	if bestCSR == nil && pendingCSRs > 0 {
 		log.V(1).Info("pending csr, waiting")
 		return ctrl.Result{}, nil
 	}
 
-	// 7.b no CSRs at all => Create a new one
+	// 9.b no CSRs at all => Create a new one
 	if bestCSR == nil && pendingCSRs == 0 {
 		log.Info("no csr, creating")
 		csr, err := createCsr(secret.Name, secret.Namespace, r.Config.SignerName, hosts, privateKey)
@@ -435,14 +443,14 @@ func (r *SecretReconciler) reconcileSecret(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// 7.c One singed CSR and some pending ones
+	// 9.c One singed CSR and some pending ones
 	if pendingCSRs > 0 {
 		return ctrl.Result{}, nil
 	}
 
-	// 7.d One singed CSR but no pending ones, proceed to renewal
+	// 9.d One singed CSR but no pending ones, proceed to renewal
 
-	// 8. Renewal
+	// 10. Renewal
 	certDuration := bestCertificate.NotAfter.Sub(bestCertificate.NotBefore)
 	if r.Config.CertificateDuration < certDuration {
 		certDuration = r.Config.CertificateDuration
