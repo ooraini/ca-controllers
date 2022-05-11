@@ -25,6 +25,8 @@ spec:
               of an object. Servers should convert recognized schemas to the latest
               internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
+          approverEnabled:
+            type: boolean
           caCertPath:
             type: string
           caKeyPath:
@@ -72,6 +74,27 @@ spec:
               set to a negative duration, e.G. time.Duration(-1) The graceful shutdown
               is skipped for safety reasons in case the leader election lease is lost.
             type: string
+          gvkConfigs:
+            items:
+              properties:
+                group:
+                  type: string
+                jmes:
+                  type: string
+                kind:
+                  type: string
+                objectSupportDefault:
+                  type: string
+                version:
+                  type: string
+              required:
+              - group
+              - jmes
+              - kind
+              - objectSupportDefault
+              - version
+              type: object
+            type: array
           health:
             description: Health contains the controller health configuration
             properties:
@@ -156,6 +179,8 @@ spec:
           rootCA:
             format: byte
             type: string
+          signerEnabled:
+            type: boolean
           signerName:
             type: string
           syncPeriod:
@@ -187,6 +212,7 @@ spec:
                 type: integer
             type: object
         required:
+        - approverEnabled
         - caCertPath
         - caKeyPath
         - certificateDuration
@@ -194,6 +220,7 @@ spec:
         - clusterExternalDomain
         - keyType
         - rootCA
+        - signerEnabled
         - signerName
         type: object
     served: true
