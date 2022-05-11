@@ -2,15 +2,20 @@ package controllers
 
 import (
 	"context"
+	"crypto"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	certv1 "k8s.io/api/certificates/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	"math"
+	"math/big"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"time"
 )
 
 type SignerReconciler struct {
@@ -116,4 +121,45 @@ func (r *SignerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(ignoreDeletesPredicate).
 		Named("signer").
 		Complete(r)
+}
+
+// Return PEM encoded certificate
+func createCertificate(csr *x509.CertificateRequest, duration time.Duration, parent *x509.Certificate, privateKey crypto.PrivateKey) ([]byte, error) {
+
+	keyUsage := x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature
+	extKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	maxSerial := big.NewInt(math.MaxInt64)
+	serialNumber, err := rand.Int(rand.Reader, maxSerial)
+	if err != nil {
+		return nil, err
+	}
+
+	notBefore := time.Now().UTC()
+	notAfter := notBefore.Add(duration)
+	if notAfter.After(parent.NotAfter) {
+		notAfter = parent.NotAfter
+	}
+
+	CertTemplate := &x509.Certificate{
+		SignatureAlgorithm: parent.SignatureAlgorithm,
+		PublicKeyAlgorithm: csr.PublicKeyAlgorithm,
+		PublicKey:          csr.PublicKey,
+		SerialNumber:       serialNumber,
+		Subject:            csr.Subject,
+		NotBefore:          notBefore,
+		NotAfter:           notAfter,
+		KeyUsage:           keyUsage,
+		ExtKeyUsage:        extKeyUsage,
+		IsCA:               false,
+		DNSNames:           csr.DNSNames,
+	}
+
+	certificate, err := x509.CreateCertificate(rand.Reader, CertTemplate, parent, CertTemplate.PublicKey, privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate}),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: parent.Raw})...), nil
 }

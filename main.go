@@ -22,6 +22,8 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"github.com/jmespath/go-jmespath"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"os"
 
 	"github.com/ooraini/ca-controllers/controllers"
@@ -86,13 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	config, err := createConfig(ctrlConfig)
-	if err != nil {
-		setupLog.Error(err, "unable to create config")
-		os.Exit(1)
-	}
-
-	if err = startControllers(mgr, config); err != nil {
+	if err = startControllers(mgr, ctrlConfig); err != nil {
 		setupLog.Error(err, "unable to start controllers")
 		os.Exit(1)
 	}
@@ -116,56 +112,59 @@ func main() {
 	}
 }
 
-func createConfig(projectConfig configv2.ProjectConfig) (*controllers.Config, error) {
+func startControllers(mgr ctrl.Manager, projectConfig configv2.ProjectConfig) error {
 
-	certPem, err := os.ReadFile(projectConfig.CaCertPath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read certificate %s", projectConfig.CaCertPath)
-	}
-
-	keyPem, err := os.ReadFile(projectConfig.CaKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read private key%s", projectConfig.CaKeyPath)
-	}
-
-	caPemBlock, _ := pem.Decode(certPem)
-	if caPemBlock == nil {
-		return nil, fmt.Errorf("invalid certificate pem")
-	}
-
-	keyPemBlock, _ := pem.Decode(keyPem)
-	if keyPemBlock == nil {
-		return nil, fmt.Errorf("invalid key pem")
-	}
-
-	caCert, err := x509.ParseCertificate(caPemBlock.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse CA certificate")
-	}
-
+	var caCert *x509.Certificate
 	var privateKey crypto.PrivateKey
+	var err error
 
-	if keyPemBlock.Type == "RSA PRIVATE KEY" {
-		privateKey, err = x509.ParsePKCS1PrivateKey(keyPemBlock.Bytes)
+	if projectConfig.SignerEnabled {
+		certPem, err := os.ReadFile(projectConfig.CaCertPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse RSA key")
+			return fmt.Errorf("unable to read certificate %s", projectConfig.CaCertPath)
 		}
-	} else if keyPemBlock.Type == "EC PRIVATE KEY" {
-		privateKey, err = x509.ParseECPrivateKey(keyPemBlock.Bytes)
+
+		keyPem, err := os.ReadFile(projectConfig.CaKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse EC key")
+			return fmt.Errorf("unable to read private key%s", projectConfig.CaKeyPath)
 		}
-	} else {
-		return nil, fmt.Errorf("unkown key type %s", keyPemBlock.Type)
+
+		caPemBlock, _ := pem.Decode(certPem)
+		if caPemBlock == nil {
+			return fmt.Errorf("invalid certificate pem")
+		}
+
+		keyPemBlock, _ := pem.Decode(keyPem)
+		if keyPemBlock == nil {
+			return fmt.Errorf("invalid key pem")
+		}
+
+		caCert, err = x509.ParseCertificate(caPemBlock.Bytes)
+		if err != nil {
+			return fmt.Errorf("unable to parse CA certificate")
+		}
+
+		if keyPemBlock.Type == "RSA PRIVATE KEY" {
+			privateKey, err = x509.ParsePKCS1PrivateKey(keyPemBlock.Bytes)
+			if err != nil {
+				return fmt.Errorf("unable to parse RSA key")
+			}
+		} else if keyPemBlock.Type == "EC PRIVATE KEY" {
+			privateKey, err = x509.ParseECPrivateKey(keyPemBlock.Bytes)
+			if err != nil {
+				return fmt.Errorf("unable to parse EC key")
+			}
+		} else {
+			return fmt.Errorf("unkown key type %s", keyPemBlock.Type)
+		}
 	}
 
 	var rootCert *x509.Certificate
-
 	if projectConfig.RootCA != nil {
 		block, _ := pem.Decode(projectConfig.RootCA)
 		rootCert, err = x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse root certificate")
+			return fmt.Errorf("unable to parse root certificate")
 		}
 	}
 
@@ -173,14 +172,13 @@ func createConfig(projectConfig configv2.ProjectConfig) (*controllers.Config, er
 	if projectConfig.KeyType != "" {
 		_, ok := controllers.SupportedKeyTypes[projectConfig.KeyType]
 		if !ok {
-			return nil, fmt.Errorf("unsupported key type %s", projectConfig.KeyType)
+			return fmt.Errorf("unsupported key type %s", projectConfig.KeyType)
 		}
 		keyType = projectConfig.KeyType
 	}
 
-	// validate DNS
 	if projectConfig.SignerName == "" {
-		return nil, fmt.Errorf("empty signer")
+		return fmt.Errorf("empty signer")
 	}
 
 	clusterDomain := controllers.DefaultClusterDomain
@@ -189,7 +187,45 @@ func createConfig(projectConfig configv2.ProjectConfig) (*controllers.Config, er
 		clusterDomain = projectConfig.ClusterDomain
 	}
 
-	return &controllers.Config{
+	var gvkConfigs []controllers.GvkConfig
+
+	for _, gvkConfig := range projectConfig.GvkConfigs {
+		gvk := schema.GroupVersionKind{
+			Group:   gvkConfig.Group,
+			Version: gvkConfig.Version,
+			Kind:    gvkConfig.Kind,
+		}
+
+		if gvkConfig.Jmes == "" {
+			setupLog.Info("Empty JMES expression", "gvk", gvk.String())
+			continue
+		}
+
+		jmesPath, err := jmespath.Compile(gvkConfig.Jmes)
+		if err != nil {
+			setupLog.Error(err, "could not compile JMESPath expression", "gvk", gvk.String())
+			continue
+		}
+
+		namespaceSupportAnnotation := fmt.Sprintf("%s.%s/%s", gvk.Group, "ca-controllers", gvk.Version)
+
+		objectSupport := controllers.ObjectSupport(gvkConfig.ObjectSupportDefault)
+		if objectSupport.IsValid() != nil {
+			setupLog.Info(fmt.Sprintf("invalid object support value '%s'", objectSupport), "gvk", gvk)
+			objectSupport = controllers.ObjectSupportDisabled
+		}
+
+		gvkConfigs = append(gvkConfigs, controllers.GvkConfig{
+			GroupVersionKind:           gvk,
+			JMESPath:                   jmesPath,
+			NamespaceSupportAnnotation: namespaceSupportAnnotation,
+			DefaultObjectSupport:       objectSupport,
+		})
+	}
+
+	setupLog.Info(fmt.Sprintf("Starting with %d GVKs", len(gvkConfigs)))
+
+	config := &controllers.Config{
 		CaCert:                caCert,
 		CaPrivateKey:          privateKey,
 		SignerName:            projectConfig.SignerName,
@@ -199,13 +235,7 @@ func createConfig(projectConfig configv2.ProjectConfig) (*controllers.Config, er
 		ClusterDomain:         clusterDomain,
 		ClusterExternalDomain: projectConfig.ClusterExternalDomain,
 		KeyType:               keyType,
-	}, nil
-}
-
-func startControllers(mgr ctrl.Manager, config *controllers.Config) error {
-
-	if config.SignerName == "" {
-		return fmt.Errorf("missing signerName")
+		GvkConfigs:            gvkConfigs,
 	}
 
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
@@ -213,54 +243,46 @@ func startControllers(mgr ctrl.Manager, config *controllers.Config) error {
 		return err
 	}
 
-	approver, err := controllers.NewApproverReconciler(
-		mgr.GetClient(),
-		mgr.GetScheme(),
-		clientset,
-		config)
+	if projectConfig.ApproverEnabled {
+		approver, err := controllers.NewApproverReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			clientset,
+			config)
+
+		if err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "approver")
+			return err
+		}
+
+		if err = approver.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "approver")
+			return err
+		}
+	}
+
+	if projectConfig.SignerEnabled {
+		signer, err := controllers.NewSignerReconciler(mgr.GetClient(), mgr.GetScheme(), clientset, config)
+		if err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "signer")
+			return err
+		}
+
+		if err = signer.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "signer")
+			return err
+		}
+	}
+
+	secretReconciler, err := controllers.NewSecretReconciler(mgr.GetClient(), mgr.GetScheme(), config)
 
 	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "approver")
+		setupLog.Error(err, "unable to create controller", "controller", "secret")
 		return err
 	}
 
-	if err = approver.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "approver")
-		return err
-	}
-
-	signer, err := controllers.NewSignerReconciler(mgr.GetClient(), mgr.GetScheme(), clientset, config)
-	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "signer")
-		return err
-	}
-
-	if err = signer.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "signer")
-		return err
-	}
-
-	ingressSupport, err := controllers.NewIngressSupportReconciler(mgr.GetClient(), mgr.GetScheme(), config)
-
-	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ingresssupport")
-		return err
-	}
-
-	if err = ingressSupport.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ingresssupport")
-		return err
-	}
-
-	serviceSupport, err := controllers.NewServiceSupportReconciler(mgr.GetClient(), mgr.GetScheme(), config)
-
-	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "servicesupport")
-		return err
-	}
-
-	if err = serviceSupport.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "servicesupport")
+	if err = secretReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "secret")
 		return err
 	}
 

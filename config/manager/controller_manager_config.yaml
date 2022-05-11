@@ -14,4 +14,28 @@ signerName: ca-controllers.io/server
 caCertPath: /ca/tls.crt
 caKeyPath: /ca/tls.key
 keyType: EC
-certificateDuration: 24h
+certificateDuration: 10m
+approverEnabled: true
+signerEnabled: true
+gvkConfigs:
+  - group: ""
+    version: "v1"
+    kind: "Service"
+    objectSupportDefault: Enabled
+    jmes: >-
+      {
+        secretName: metadata.annotations."ca-controllers.io/secret.metadata.name",
+        hosts: [
+          metadata.name,
+          join('.', [metadata.name, metadata.namespace]),
+          join('.', [metadata.name, metadata.namespace, 'svc']),
+          join('.', [metadata.name, metadata.namespace, 'svc', clusterDomain] | []),
+          join('.', [metadata.name, metadata.namespace, clusterExternalDomain] | [])
+        ]
+      }
+
+  - group: "networking.k8s.io"
+    version: "v1"
+    kind: "Ingress"
+    objectSupportDefault: WhenAnnotated
+    jmes: spec.tls

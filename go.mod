@@ -3,6 +3,7 @@ module github.com/ooraini/ca-controllers
 go 1.17
 
 require (
+	github.com/jmespath/go-jmespath v0.4.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	k8s.io/api v0.23.0

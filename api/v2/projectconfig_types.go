@@ -49,6 +49,17 @@ type ProjectConfig struct {
 	CertificateDuration   metav1.Duration `json:"certificateDuration"`
 	ClusterDomain         string          `json:"clusterDomain"`
 	ClusterExternalDomain string          `json:"clusterExternalDomain"`
+	GvkConfigs            []GvkConfig     `json:"gvkConfigs,omitempty"`
+	SignerEnabled         bool            `json:"signerEnabled"`
+	ApproverEnabled       bool            `json:"approverEnabled"`
+}
+
+type GvkConfig struct {
+	Group                string `json:"group"`
+	Version              string `json:"version"`
+	Kind                 string `json:"kind"`
+	ObjectSupportDefault string `json:"objectSupportDefault"`
+	Jmes                 string `json:"jmes"`
 }
 
 func init() {
