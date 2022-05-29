@@ -411,7 +411,17 @@ func (r *SecretReconciler) listSecretReconcileRequests(ctx context.Context, log 
 	for _, obj := range list.Items {
 		obj := obj
 
-		tracked := isTracked(gvkConfig, namespace, &obj)
+		tracked := false
+		switch gvkConfig.DefaultObjectSupport {
+		case ObjectSupportDisabled:
+			tracked = false
+		case ObjectSupportEnabled:
+			_, ok := obj.GetAnnotations()[ObjectIgnore]
+			tracked = !ok
+		default:
+			_, ok := obj.GetAnnotations()[ObjectAccept]
+			tracked = ok
+		}
 
 		obj.Object["clusterDomain"] = r.Config.ClusterDomain
 		if r.Config.ClusterExternalDomain != "" {

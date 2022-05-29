@@ -7,11 +7,8 @@ import (
 	"github.com/jmespath/go-jmespath"
 	certv1 "k8s.io/api/certificates/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"regexp"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -43,50 +40,7 @@ type Config struct {
 type GvkConfig struct {
 	schema.GroupVersionKind
 	*jmespath.JMESPath
-	NamespaceSupportAnnotation string
-	DefaultObjectSupport       ObjectSupport
-}
-
-func isTracked(config GvkConfig, namespace, object client.Object) bool {
-
-	reg := regexp.MustCompile("\\s")
-	kind := object.GetObjectKind().GroupVersionKind().Kind
-	kindSupport := config.DefaultObjectSupport
-
-	nsSupport := ""
-	if v, ok := namespace.GetAnnotations()[config.NamespaceSupportAnnotation]; ok {
-		nsSupport = v
-	}
-
-	for _, item := range reg.Split(nsSupport, -1) {
-		split := strings.Split(item, ":")
-		if len(split) == 2 && (split[0] == kind || split[0] == "*") {
-			if ObjectSupport(split[1]).IsValid() == nil {
-				kindSupport = ObjectSupport(split[1])
-				break
-			}
-		}
-	}
-
-	// No annotation => Disabled
-	// Annotation with empty value => Enabled
-	// Annotation with valid ObjectSupport => use the value
-	resourceSupport := ObjectSupportDisabled
-	if v, ok := object.GetAnnotations()[ObjectSupportAnnotation]; ok {
-		resourceSupport = ObjectSupportEnabled
-		s := ObjectSupport(v)
-		if s.IsValid() == nil && s != ObjectSupportAnnotation {
-			resourceSupport = s
-		}
-	}
-
-	if kindSupport == ObjectSupportDisabled {
-		return false
-	} else if kindSupport == ObjectSupportEnabled {
-		return true
-	} else { // ObjectSupportWhenAnnotated
-		return resourceSupport == ObjectSupportEnabled
-	}
+	DefaultObjectSupport ObjectSupport
 }
 
 const (
@@ -100,7 +54,8 @@ const (
 	ControllerGroupAnnotation   = "ca-controllers.io/group"
 	ControllerVersionAnnotation = "ca-controllers.io/version"
 	ControllerKindAnnotation    = "ca-controllers.io/kind"
-	ObjectSupportAnnotation     = "ca-controllers.io/support"
+	ObjectAccept                = "ca-controllers.io/accept"
+	ObjectIgnore                = "ca-controllers.io/ignore"
 	ManagedByLabelKey           = "app.kubernetes.io/managed-by"
 	ManagedByLabelValue         = "ca-controllers"
 )

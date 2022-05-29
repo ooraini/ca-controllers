@@ -207,8 +207,6 @@ func startControllers(mgr ctrl.Manager, projectConfig configv2.ProjectConfig) er
 			continue
 		}
 
-		namespaceSupportAnnotation := fmt.Sprintf("%s.%s/%s", gvk.Group, "ca-controllers", gvk.Version)
-
 		objectSupport := controllers.ObjectSupport(gvkConfig.ObjectSupportDefault)
 		if objectSupport.IsValid() != nil {
 			setupLog.Info(fmt.Sprintf("invalid object support value '%s'", objectSupport), "gvk", gvk)
@@ -216,10 +214,9 @@ func startControllers(mgr ctrl.Manager, projectConfig configv2.ProjectConfig) er
 		}
 
 		gvkConfigs = append(gvkConfigs, controllers.GvkConfig{
-			GroupVersionKind:           gvk,
-			JMESPath:                   jmesPath,
-			NamespaceSupportAnnotation: namespaceSupportAnnotation,
-			DefaultObjectSupport:       objectSupport,
+			GroupVersionKind:     gvk,
+			JMESPath:             jmesPath,
+			DefaultObjectSupport: objectSupport,
 		})
 	}
 
