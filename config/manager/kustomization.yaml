@@ -10,6 +10,6 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/ooraini/ca-controllers
-  newTag: v0.0.8
+  newTag: v0.0.9
 secretGenerator:
 - name: ca
