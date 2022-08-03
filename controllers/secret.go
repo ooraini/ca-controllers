@@ -135,9 +135,6 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return reconcile.Result{}, nil
 	}
 
-	group := reconcileRequests[0].object.GroupVersionKind().Group
-	version := reconcileRequests[0].object.GroupVersionKind().Version
-	kind := reconcileRequests[0].object.GroupVersionKind().Kind
 	owner := reconcileRequests[0].object
 	includeRoot := reconcileRequests[0].includeRoot
 	hosts := reconcileRequests[0].hosts
@@ -158,11 +155,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					ManagedByLabelKey: ManagedByLabelValue,
 				},
 				Annotations: map[string]string{
-					ControllerGroupAnnotation:   group,
-					ControllerVersionAnnotation: version,
-					ControllerKindAnnotation:    kind,
-					NamespaceAnnotation:         owner.GetNamespace(),
-					NameAnnotation:              owner.GetName(),
+					NameAnnotation: owner.GetName(),
 				},
 			},
 			Data: map[string][]byte{
@@ -191,26 +184,59 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
+	if secret.Type != corev1.SecretTypeTLS {
+		log.Info("incorrect secret type, deleting")
+		if err = r.Delete(ctx, secret); err != nil {
+			log.Error(err, "unable to delete secret")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, nil
+	}
+
 	// Ensure privateKey
 	var privateKey crypto.PrivateKey
 	{
 		keyPem := secret.Data["tls.key"]
 
-		if keyPem == nil {
-			log.Info("secret with no tls.key, deleting")
+		if keyPem == nil || len(keyPem) == 0 {
+			log.Info("secret with no tls.key")
+			key, err := generateKey(r.Config.KeyType)
+			if err != nil {
+				log.Error(err, "unable to generate key")
+				return ctrl.Result{}, err
+			}
+			secret.Data["tls.key"] = toPem(key)
+			secret.Data["tls.crt"] = nil
+			secret.Annotations = map[string]string{
+				NameAnnotation: owner.GetName(),
+			}
+
+			if err = r.Update(ctx, secret); err != nil {
+				log.Error(err, "unable to update private key")
+				return ctrl.Result{}, err
+			}
+
+			keyPem = secret.Data["tls.key"]
+		}
+
+		block, _ := pem.Decode(keyPem)
+		if block == nil {
+			log.Error(err, "unable to decode PEM")
 			if err = r.Delete(ctx, secret); err != nil {
 				log.Error(err, "unable to delete secret")
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, nil
 		}
-
-		block, _ := pem.Decode(keyPem)
 		err = nil
 		privateKey, err = parseKey(block)
 		if err != nil {
-			log.Info("unable to parse private key")
-			return ctrl.Result{}, err
+			log.Error(err, "unable to parse private key, deleting secret")
+			if err = r.Delete(ctx, secret); err != nil {
+				log.Error(err, "unable to delete secret")
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, nil
 		}
 	}
 
@@ -227,20 +253,16 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 		}
 
-		if group != secret.Annotations[ControllerGroupAnnotation] ||
-			version != secret.Annotations[ControllerVersionAnnotation] ||
-			kind != secret.Annotations[ControllerKindAnnotation] ||
-			owner.GetNamespace() != secret.Annotations[NamespaceAnnotation] ||
-			owner.GetName() != secret.Annotations[NameAnnotation] ||
+		if owner.GetName() != secret.Annotations[NameAnnotation] ||
 			wrongRoot ||
 			noOwner ||
 			noFinalizer {
 
-			secret.Annotations[ControllerGroupAnnotation] = group
-			secret.Annotations[ControllerVersionAnnotation] = version
-			secret.Annotations[ControllerKindAnnotation] = kind
+			if secret.Annotations == nil {
+				secret.Annotations = map[string]string{}
+			}
+
 			secret.Annotations[NamespaceAnnotation] = owner.GetNamespace()
-			secret.Annotations[NameAnnotation] = owner.GetName()
 			controllerutil.AddFinalizer(secret, FinalizerName)
 			_ = controllerutil.SetOwnerReference(owner, secret, r.Scheme)
 			if includeRoot {

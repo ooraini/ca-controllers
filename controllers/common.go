@@ -44,20 +44,17 @@ type GvkConfig struct {
 }
 
 const (
-	DefaultKeyType              = "EC"
-	DefaultClusterDomain        = "cluster.local"
-	FinalizerName               = "ca-controllers.io/finalizer"
-	SignerNameAnnotation        = "ca-controllers.io/signerName"
-	IncludeRootCAAnnotation     = "ca-controllers.io/include-root-ca"
-	NameAnnotation              = "ca-controllers.io/metadata.name"
-	NamespaceAnnotation         = "ca-controllers.io/metadata.namespace"
-	ControllerGroupAnnotation   = "ca-controllers.io/group"
-	ControllerVersionAnnotation = "ca-controllers.io/version"
-	ControllerKindAnnotation    = "ca-controllers.io/kind"
-	ObjectAccept                = "ca-controllers.io/accept"
-	ObjectIgnore                = "ca-controllers.io/ignore"
-	ManagedByLabelKey           = "app.kubernetes.io/managed-by"
-	ManagedByLabelValue         = "ca-controllers"
+	DefaultKeyType          = "EC"
+	DefaultClusterDomain    = "cluster.local"
+	FinalizerName           = "ca-controllers.io/finalizer"
+	SignerNameAnnotation    = "ca-controllers.io/signerName"
+	IncludeRootCAAnnotation = "ca-controllers.io/include-root-ca"
+	NameAnnotation          = "ca-controllers.io/metadata.name"
+	NamespaceAnnotation     = "ca-controllers.io/metadata.namespace"
+	ObjectAccept            = "ca-controllers.io/accept"
+	ObjectIgnore            = "ca-controllers.io/ignore"
+	ManagedByLabelKey       = "app.kubernetes.io/managed-by"
+	ManagedByLabelValue     = "ca-controllers"
 )
 
 type ObjectSupport string
